@@ -1,0 +1,109 @@
+---
+title: "Analysis on Human Activity Recognition Data"
+author: "Leonardo Razuk Jorge Froede"
+date: "07/23/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Objective
+
+The objective of this project is to analyse human activity recognition data from a weight lifting exercises data set. In the analysis I should explore the data available from the study (see <http://groupware.les.inf.puc-rio.br/har>), clean it and build a model to predict the outcome of the exercises based on the available variables generated from accelerometers attached to different parts of the subjects bodies.
+
+## Getting and cleaning the data
+
+First I loaded the training and the testing data from the links available in the course project instructions page:
+
+```{r, cache=TRUE}
+training = read.csv(url("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"), sep = ",", na.strings = c("#DIV/0!", "", "NA"))
+testing = read.csv(url("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"), sep = ",", na.strings = c("#DIV/0!", "", "NA"))
+```
+
+Then I analysed the training data frame using the `str` function:
+```{r}
+str(training, list.len=ncol(training))
+```
+
+I decided to do the following cleaning/tyding actions:
+
+* Remove the first seven variables, not related to measures:
+    + X
+    + user_name
+    + raw_timestamp_part_1
+    + raw_timestamp_part_2
+    + cvtd_timestamp
+    + new_window
+    + num_window
+* Remove variables with only NA's.
+```{r}
+training = training[, -c(1:7)]
+testing = testing[, -c(1:7)]
+
+training = training[,colSums(is.na(training)) == 0]
+testing = testing[,colSums(is.na(testing)) == 0]
+```
+
+Then I Checked the data to see if there was any NA values left. If so, I would imput data using k-nearest neighbor's imputation. It turned out that it wasn't necessary.
+```{r}
+sum(is.na(training))
+```
+
+##Spliting the data and preprocessing
+
+I divided the training data in subTraining and subTesting groups:
+```{r, message=FALSE}
+library(caret)
+set.seed(2879)
+inTrain = createDataPartition(training$classe, p=0.75, list=F)
+subTraining = training[inTrain, ]
+subTesting = training[-inTrain, ]
+```
+
+Then I checked the subTraining data to see if there was any "near zero" that could be removed. It turned out that there wansn't any:
+```{r}
+nearZeroVar(subTraining)
+```
+
+Then I checked for highly correlated variables in the subTraining group, with a 80% cutoff:
+```{r}
+correlationMatrix = cor(subTraining[, -53])
+corVariables = findCorrelation(correlationMatrix, cutoff=0.85)
+names(subTraining[, corVariables])
+```
+
+I decided to remove the highly correlated variables:
+```{r}
+subTraining = subTraining[, -corVariables]
+```
+
+## Fiting the model and predicting the outcome
+
+I first chose the random forests algorithm to fit a model in the subTraining data:
+```{r, cache=TRUE, message=FALSE}
+modFit = train(classe ~ ., method="rf", data = subTraining)
+```
+
+Then I predicted the outcome in the subTesting group and got the following results:
+```{r}
+pred = predict(modFit, subTesting)
+confusionMatrix(pred, subTesting$classe)
+```
+
+Then I chose the boosted trees algorithm to fit a model in the subTraining data:
+```{r, cache=TRUE, message=FALSE}
+modFit2 = train(classe ~ ., method="gbm", data = subTraining, verbose=FALSE)
+```
+
+I got the following results with the boosted trees model:
+```{r}
+pred2 = predict(modFit2, subTesting)
+confusionMatrix(pred2, subTesting$classe)
+```
+
+As shown above, the random forests model got better results than the boosted trees one. So I decided to use it to predict on the testing data. The expected out of sample error is of 100-99.25 = 0.75%:
+```{r}
+predict(modFit, testing)
+```
